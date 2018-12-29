@@ -18,6 +18,7 @@ type API = RootAPI :<|> LessonAPI
 
 type RootAPI = Get '[JSON] [Endpoint]
  
+-- TODO Get request headers
 type LessonAPI =  "lesson" :> QueryParam "sort" LessonSort :> Get '[JSON] [Lesson]
       :<|> "lesson" :> Capture "id" Int :> Throws ResponseErr :> Get '[JSON] Lesson
       :<|> "lesson" :> ReqBody '[JSON] Lesson :> Post '[JSON] Lesson
