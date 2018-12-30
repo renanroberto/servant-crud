@@ -3,11 +3,11 @@
 
 module Server (webAppEntry) where
 
-import Servant
+import Servant hiding (Unauthorized)
 import Servant.Checked.Exceptions
 import Data.List
 import Data.Time
-import Data.Aeson hiding (Error)
+import Data.Aeson
 import GHC.Generics (Generic)
 import Network.HTTP.Types.Status
 import Network.Wai (Application)
@@ -18,24 +18,25 @@ type API = RootAPI :<|> LessonAPI
 
 type RootAPI = Get '[JSON] [Endpoint]
  
--- TODO Get request headers
 type LessonAPI =  "lesson" :> QueryParam "sort" LessonSort :> Get '[JSON] [Lesson]
-      :<|> "lesson" :> Capture "id" Int :> Throws ResponseErr :> Get '[JSON] Lesson
+      :<|> "lesson" :> Capture "id" Int :> Header "Authorization" String :> Throws ResponseErr :> Get '[JSON] Lesson
       :<|> "lesson" :> ReqBody '[JSON] Lesson :> Post '[JSON] Lesson
 
 
 type Endpoint = String
 
 
-data ResponseErr = NotFound | BadRequest
+data ResponseErr = NotFound | BadRequest | Unauthorized
 
 instance ErrStatus ResponseErr where
   toErrStatus NotFound = status404
   toErrStatus BadRequest = status400
+  toErrStatus Unauthorized = status401
 
 instance ToJSON ResponseErr where
   toJSON NotFound = toJSON ("Lesson not found" :: String)
   toJSON BadRequest = toJSON ("This is not a valid lesson id" :: String)
+  toJSON Unauthorized = toJSON ("You do not have permission" :: String)
 
 
 data LessonSort = LessonByTitle | LessonByDate
@@ -49,10 +50,18 @@ instance FromHttpApiData LessonSort where
 
 
 data Lesson = Lesson
-  { lessonID :: Int
-  , title :: String
-  , date :: Day
-  } deriving (Generic, ToJSON, FromJSON)
+  { lesson_id :: Int
+  , lesson_title :: String
+  , lesson_date :: Day
+  } deriving Generic
+
+instance ToJSON Lesson where
+  toJSON = genericToJSON defaultOptions
+    { fieldLabelModifier = drop 7 } -- length "lesson_" == 7
+
+instance FromJSON Lesson where
+  parseJSON = genericParseJSON defaultOptions
+    { fieldLabelModifier = drop 7 }
 
 
 {-- Fake DB --}
@@ -81,17 +90,20 @@ sortLesson prop = sortBy compareProps
 
 
 listLessons :: Maybe LessonSort -> Handler [Lesson]
-listLessons (Just LessonByTitle) = return (sortLesson title lessons)
-listLessons (Just LessonByDate) = return (sortLesson date lessons)
+listLessons (Just LessonByTitle) = return (sortLesson lesson_title lessons)
+listLessons (Just LessonByDate) = return (sortLesson lesson_date lessons)
 listLessons Nothing = return lessons
 
-getLesson :: Int -> Handler (Envelope '[ResponseErr] Lesson)
-getLesson lid =
+
+getLesson :: Int -> Maybe String -> Handler (Envelope '[ResponseErr] Lesson)
+getLesson _ Nothing = pureErrEnvelope Unauthorized
+getLesson lid _ =
   if lid > 0
-     then case find (\l -> lessonID l == lid) lessons of
+     then case find (\l -> lesson_id l == lid) lessons of
             Nothing -> pureErrEnvelope NotFound
             Just lesson -> pureSuccEnvelope lesson
      else pureErrEnvelope BadRequest
+
 
 addLesson :: Lesson -> Handler Lesson
 addLesson lesson = return lesson -- TODO

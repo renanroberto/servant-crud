@@ -34,6 +34,15 @@ resolver: lts-12.24
 #  - wai
 packages:
 - .
+- location:
+    git: https://github.com/tathougies/beam.git
+    commit: a3b5e0763843fed48c7eef53fa7d08cfe710342d
+  extra-dep: true
+  subdirs:
+    - beam-core
+    - beam-migrate
+    - beam-sqlite
+
 # Dependency packages to be pulled from upstream that are not in the resolver
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
