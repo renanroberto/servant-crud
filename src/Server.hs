@@ -3,15 +3,17 @@
 
 module Server (webAppEntry) where
 
-import Servant hiding (Unauthorized)
-import Servant.Checked.Exceptions
 import Data.List
 import Data.Time
 import Data.Aeson
 import GHC.Generics (Generic)
+import Servant hiding (Unauthorized)
+import Servant.Checked.Exceptions
 import Network.HTTP.Types.Status
 import Network.Wai (Application)
 import Network.Wai.Handler.Warp (run)
+import Database.Beam
+import Database.Beam.Sqlite
  
 
 type API = RootAPI :<|> LessonAPI
