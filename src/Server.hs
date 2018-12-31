@@ -1,5 +1,8 @@
 {-# LANGUAGE OverloadedStrings, DataKinds, GADTs,
-   TypeOperators, DeriveGeneric, DeriveAnyClass #-}
+   TypeOperators, TypeFamilies, TypeApplications,
+   DeriveGeneric, DeriveAnyClass, StandaloneDeriving,
+   TypeSynonymInstances, FlexibleInstances, FlexibleContexts,
+   MultiParamTypeClasses #-}
 
 module Server (webAppEntry) where
 
@@ -14,6 +17,7 @@ import Network.Wai (Application)
 import Network.Wai.Handler.Warp (run)
 import Database.Beam
 import Database.Beam.Sqlite
+import Database.SQLite.Simple
  
 
 type API = RootAPI :<|> LessonAPI
@@ -50,12 +54,22 @@ instance FromHttpApiData LessonSort where
       "date" -> Right LessonByDate
       _ -> Left "Invalid Param. The availables params are \"title\" and \"date\""
 
+data LessonT f = Lesson
+  { lesson_id     :: Columnar f Int
+  , lesson_title  :: Columnar f String
+  , lesson_date   :: Columnar f Day
+  } deriving (Generic, Beamable)
+  
 
-data Lesson = Lesson
-  { lesson_id :: Int
-  , lesson_title :: String
-  , lesson_date :: Day
-  } deriving Generic
+type Lesson = LessonT Identity
+type LessonID = PrimaryKey LessonT Identity
+
+instance Table LessonT where
+  data PrimaryKey LessonT f = LessonID (Columnar f Int)
+    deriving (Generic, Beamable)
+  primaryKey = LessonID . lesson_id
+
+deriving instance Show Lesson
 
 instance ToJSON Lesson where
   toJSON = genericToJSON defaultOptions
@@ -64,6 +78,19 @@ instance ToJSON Lesson where
 instance FromJSON Lesson where
   parseJSON = genericParseJSON defaultOptions
     { fieldLabelModifier = drop 7 }
+
+
+data CrudDB f = CrudDB
+  { db_lessons :: f (TableEntity LessonT)
+  } deriving Generic
+
+instance Database be CrudDB
+
+crudDB :: DatabaseSettings as CrudDB
+crudDB = defaultDbSettings
+
+conn :: IO Connection
+conn = open "crud.db"
 
 
 {-- Fake DB --}
