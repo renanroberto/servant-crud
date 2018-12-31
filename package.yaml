@@ -28,9 +28,6 @@ dependencies:
 - http-types
 - wai
 - warp
-- beam-core
-- beam-migrate
-- beam-sqlite
 - sqlite-simple
 
 library:

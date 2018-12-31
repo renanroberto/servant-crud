@@ -12,9 +12,8 @@ import Servant.Checked.Exceptions
 import Network.HTTP.Types.Status
 import Network.Wai (Application)
 import Network.Wai.Handler.Warp (run)
-import Database.Beam
-import Database.Beam.Sqlite
- 
+import Database.SQLite.Simple
+
 
 type API = RootAPI :<|> LessonAPI
 
@@ -55,7 +54,7 @@ data Lesson = Lesson
   { lesson_id :: Int
   , lesson_title :: String
   , lesson_date :: Day
-  } deriving Generic
+  } deriving (Show, Generic)
 
 instance ToJSON Lesson where
   toJSON = genericToJSON defaultOptions
@@ -64,6 +63,25 @@ instance ToJSON Lesson where
 instance FromJSON Lesson where
   parseJSON = genericParseJSON defaultOptions
     { fieldLabelModifier = drop 7 }
+
+
+instance ToRow Lesson where
+  toRow (Lesson _id _title _date) = toRow (_id, _title, _date)
+
+instance FromRow Lesson where
+  fromRow = Lesson <$> field <*> field <*> field
+
+
+{-- Real DB --}
+database :: IO ()
+database = do
+  conn <- open "crud.db"
+  execute_ conn "create table if not exists lessons (id int primary key, title varchar(50), date varchar(10))"
+  execute conn "insert into lessons values (?, ?, ?)" (2 :: Int, "análise" :: String, "2019-12-12" :: String) 
+  lesson <- query_ conn "select id, title, date from lessons" :: IO [Lesson]
+  close conn
+  print lesson
+{-- Real DB --}
 
 
 {-- Fake DB --}
