@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, DataKinds, GADTs,
+{-# LANGUAGE OverloadedStrings, DataKinds, GADTs, KindSignatures,
     TypeOperators, DeriveGeneric, DeriveAnyClass #-}
 
 module Server (webAppEntry) where
@@ -16,49 +16,79 @@ import Network.Wai.Handler.Warp (run)
 import Database.SQLite.Simple
 
 
-type API = RootAPI :<|> LessonAPI
+type API = LessonAPI
 
-type RootAPI = Get '[JSON] [Endpoint]
- 
 type LessonAPI =  "lesson" :> QueryParam "sort" LessonSort :> Get '[JSON] [Lesson]
       :<|> "lesson" :> Capture "id" Int :> Header "Authorization" String :> Throws ResponseErr :> Get '[JSON] Lesson
       :<|> "lesson" :> ReqBody '[JSON] Lesson :> Post '[JSON] Lesson
 
 
-type Endpoint = String
+data LessonSort = LessonByTitle | LessonByDate
+
+instance FromHttpApiData LessonSort where
+  parseQueryParam "title" = Right LessonByTitle
+  parseQueryParam "date" = Right LessonByDate
+  parseQueryParam _ = Left "Invalid Param. The availables params are \"title\" and \"date\""
 
 
 data ResponseErr = NotFound | BadRequest | Unauthorized
 
 instance ErrStatus ResponseErr where
-  toErrStatus NotFound = status404
   toErrStatus BadRequest = status400
   toErrStatus Unauthorized = status401
+  toErrStatus NotFound = status404
 
 instance ToJSON ResponseErr where
-  toJSON NotFound = toJSON ("Lesson not found" :: String)
   toJSON BadRequest = toJSON ("This is not a valid lesson id" :: String)
   toJSON Unauthorized = toJSON ("You do not have permission" :: String)
+  toJSON NotFound = toJSON ("Lesson not found" :: String)
 
 
-data LessonSort = LessonByTitle | LessonByDate
+{-- QueryBuilder experimet --}
+class QueryBuilder a where
+  toQuery :: a -> String
 
-instance FromHttpApiData LessonSort where
-  parseQueryParam param =
-    case param of
-      "title" -> Right LessonByTitle
-      "date" -> Right LessonByDate
-      _ -> Left "Invalid Param. The availables params are \"title\" and \"date\""
+data Sort = SortTitle | SortDate | NoSort
+data Order = Asc | Desc | NoOrder
+data Limit = Limit Int | NoLimit
+
+data QuerySelect where
+  NoQuery :: QuerySelect
+  Select :: Sort -> Order -> Limit -> QuerySelect
+
+instance QueryBuilder Sort where
+  toQuery NoSort = ""
+  toQuery SortDate = " order by date "
+  toQuery SortTitle = " order by title "
+
+instance QueryBuilder Order where
+  toQuery NoOrder = ""
+  toQuery Asc = " asc "
+  toQuery Desc = " desc "
+
+instance QueryBuilder Limit where
+  toQuery NoLimit = ""
+  toQuery (Limit n) = " limit " ++ show n ++ " "
+
+instance QueryBuilder QuerySelect where
+  toQuery NoQuery = "select * from lessons"
+  toQuery (Select sort order limit) =
+    toQuery NoQuery <>
+    toQuery sort <>
+    toQuery order <>
+    toQuery limit
+{-- QueryBuilder experimet --}
+
+
+dropPrefix :: String -> [a] -> [a]
+dropPrefix str = drop (length str)
 
 
 data Lesson = Lesson
   { lesson_id :: Maybe Int
   , lesson_title :: String
   , lesson_date :: Day
-  } deriving (Show, Generic)
-
-dropPrefix :: String -> [a] -> [a]
-dropPrefix str = drop (length str)
+  } deriving Generic
 
 instance ToJSON Lesson where
   toJSON = genericToJSON defaultOptions
@@ -76,7 +106,7 @@ instance FromRow Lesson where
   fromRow = Lesson <$> field <*> field <*> field
 
 
-{-- Real DB example --}
+{-- DB example --}
 database :: IO ()
 database = do
   conn <- open "crud.db"
@@ -85,15 +115,23 @@ database = do
   execute conn "insert into lessons (title, date) values (?, ?)" ("geometria" :: String, "2018-12-12" :: String) 
   lesson <- query_ conn "select id, title, date from lessons" :: IO [Lesson]
   close conn
-  print lesson
+{-- DB example --}
 
 
 listLessonsDB :: IO [Lesson]
 listLessonsDB = do
   conn <- open "crud.db"
-  lessons <- query_ conn "select * from lessons limit 100" :: IO [Lesson]
+  let queryString = "select * from lessons" :: Query
+  lessons <- query_ conn queryString :: IO [Lesson]
   close conn
   return lessons
+
+getLessonDB :: Int -> IO (Maybe Lesson)
+getLessonDB _id = do
+  conn <- open "crud.db"
+  mlesson <- query conn "select * from lessons where id = ?" [_id] :: IO [Lesson]
+  close conn
+  return $ if null mlesson then Nothing else Just (head mlesson)
 
 insertLessonDB :: Lesson -> IO Lesson
 insertLessonDB lesson = do
@@ -105,57 +143,26 @@ insertLessonDB lesson = do
   [savedLesson] <- query_ conn "select * from lessons order by id desc limit 1" :: IO [Lesson]
   close conn
   return savedLesson
-{-- Real DB example --}
 
-{-- Fake DB --}
-lessons :: [Lesson]
-lessons =
-  [ Lesson (Just 1) "Mecanica Quantica" (fromGregorian 2018 12 24)
-  , Lesson (Just 2) "Teoria dos Numeros" (fromGregorian 2018 11 26)
-  ]
-
-endpoints :: [Endpoint]
-endpoints =
-  [ "/lesson[?sort=(title|date)]"
-  , "/lesson/<id>"
-  ]
-{-- Fake DB --}
-
-
-root :: Handler [Endpoint]
-root = return endpoints
-
-
--- sortLesson :: Ord a => (Lesson -> a) -> [Lesson] -> [Lesson]
--- sortLesson prop = sortBy compareProps
---   where compareProps :: Lesson -> Lesson -> Ordering
---         compareProps x y = compare (prop x) (prop y)
--- 
--- 
--- listLessons :: Maybe LessonSort -> Handler [Lesson]
--- listLessons (Just LessonByTitle) = return (sortLesson lesson_title lessons)
--- listLessons (Just LessonByDate) = return (sortLesson lesson_date lessons)
--- listLessons Nothing = return lessons
 
 listLessons :: Maybe LessonSort -> Handler [Lesson]
-listLessons _ = liftIO $ listLessonsDB
+listLessons (Just LessonByTitle) = liftIO $ listLessonsDB
+listLessons (Just LessonByDate) = liftIO $ listLessonsDB
+listLessons Nothing = liftIO $ listLessonsDB
 
 getLesson :: Int -> Maybe String -> Handler (Envelope '[ResponseErr] Lesson)
 getLesson _ Nothing = pureErrEnvelope Unauthorized
-getLesson lid _ =
-  if lid > 0
-     then case find (\l -> lesson_id l == Just lid) lessons of
-            Nothing -> pureErrEnvelope NotFound
-            Just lesson -> pureSuccEnvelope lesson
-     else pureErrEnvelope BadRequest
-
+getLesson _id _ = do
+  mlesson <- liftIO $ getLessonDB _id
+  case mlesson of
+    Nothing -> pureErrEnvelope NotFound
+    Just lesson -> pureSuccEnvelope lesson
 
 addLesson :: Lesson -> Handler Lesson
 addLesson = liftIO . insertLessonDB
 
 server :: Server API
-server = root
-    :<|> listLessons
+server = listLessons
     :<|> getLesson
     :<|> addLesson
   
