@@ -39,42 +39,6 @@ instance ToJSON ResponseErr where
   toJSON NotFound = toJSON ("Lesson not found" :: String)
 
 
-{-- QueryBuilder experimet --}
-class QueryBuilder a where
-  toQuery :: a -> String
-
-data Sort = SortTitle | SortDate | NoSort
-data Order = Asc | Desc | NoOrder
-data Limit = Limit Int | NoLimit
-
-data QuerySelect where
-  NoQuery :: QuerySelect
-  Select :: Sort -> Order -> Limit -> QuerySelect
-
-instance QueryBuilder Sort where
-  toQuery NoSort = ""
-  toQuery SortDate = " order by date "
-  toQuery SortTitle = " order by title "
-
-instance QueryBuilder Order where
-  toQuery NoOrder = ""
-  toQuery Asc = " asc "
-  toQuery Desc = " desc "
-
-instance QueryBuilder Limit where
-  toQuery NoLimit = ""
-  toQuery (Limit n) = " limit " ++ show n ++ " "
-
-instance QueryBuilder QuerySelect where
-  toQuery NoQuery = "select * from lessons"
-  toQuery (Select sort order limit) =
-    toQuery NoQuery <>
-    toQuery sort <>
-    toQuery order <>
-    toQuery limit
-{-- QueryBuilder experimet --}
-
-
 dropPrefix :: String -> [a] -> [a]
 dropPrefix str = drop (length str)
 
@@ -112,38 +76,40 @@ database = do
   close conn
 {-- DB example --}
 
+(<<) :: Monad m => m a -> m b -> m a
+mx << my = mx >>= \x -> my >> return x
 
-listLessonsDB :: IO [Lesson]
-listLessonsDB = do
-  conn <- open "crud.db"
-  let queryString = "select * from lessons" :: Query
-  lessons <- query_ conn queryString :: IO [Lesson]
-  close conn
-  return lessons
+db :: (Connection -> IO a) -> IO a
+db action =
+  open "crud.db" >>= \conn ->
+    action conn << close conn
+
+
+listLessonsDB :: Maybe LessonSort -> IO [Lesson]
+listLessonsDB Nothing = db $ \conn ->
+  query_ conn "SELECT * FROM lessons"
+listLessonsDB (Just LessonByTitle) = db $ \conn ->
+  query_ conn "SELECT * FROM lessons ORDER BY title"
+listLessonsDB (Just LessonByDate) = db $ \conn ->
+  query_ conn "SELECT * FROM lessons ORDER BY date"
 
 getLessonDB :: Int -> IO (Maybe Lesson)
-getLessonDB _id = do
-  conn <- open "crud.db"
-  mlesson <- query conn "select * from lessons where id = ?" [_id] :: IO [Lesson]
-  close conn
-  return $ if null mlesson then Nothing else Just (head mlesson)
+getLessonDB _id = db $ \conn -> do
+  lessons <- query conn "SELECT * FROM lessons WHERE id = ?" (Only _id) :: IO [Lesson]
+  return $ if null lessons then Nothing else Just (head lessons)
 
 insertLessonDB :: Lesson -> IO Lesson
-insertLessonDB lesson = do
-  conn <- open "crud.db"
-  execute conn "insert into lessons (title, date) values (?, ?)"
+insertLessonDB lesson = db $ \conn -> do
+  execute conn "INSERT INTO lessons (title, date) VALUES (?, ?)"
     ( lesson_title lesson
     , lesson_date lesson
     )
-  [savedLesson] <- query_ conn "select * from lessons order by id desc limit 1" :: IO [Lesson]
-  close conn
+  [savedLesson] <- query_ conn "SELECT * FROM lessons ORDER BY id DESC LIMIT 1" :: IO [Lesson]
   return savedLesson
 
 
 listLessons :: Maybe LessonSort -> Handler [Lesson]
-listLessons (Just LessonByTitle) = liftIO $ listLessonsDB
-listLessons (Just LessonByDate) = liftIO $ listLessonsDB
-listLessons Nothing = liftIO $ listLessonsDB
+listLessons = liftIO . listLessonsDB
 
 getLesson :: Int -> Maybe String -> Handler (Envelope '[ResponseErr] Lesson)
 getLesson _ Nothing = pureErrEnvelope Unauthorized
