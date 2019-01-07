@@ -7,12 +7,15 @@ import Network.Wai (Application)
 import Network.Wai.Handler.Warp (run)
 
 import Lesson
+import Auth
 
 type API = LessonAPI
+      :<|> AuthAPI
 
 
 server :: Server API
 server = lessonHandlers
+    :<|> authHandlers
   
 api :: Proxy API
 api = Proxy

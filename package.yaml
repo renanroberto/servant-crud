@@ -42,6 +42,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     - -Werror=incomplete-patterns
+    - -O0
     dependencies:
     - crud
 
