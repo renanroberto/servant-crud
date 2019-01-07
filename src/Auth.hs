@@ -3,6 +3,10 @@
 
 module Auth (AuthAPI, authHandlers) where
 
+import Data.List
+import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy.Char8 (pack, unpack)
+import qualified Data.ByteString.Base64.Lazy as Base64
 import Data.Aeson
 import GHC.Generics (Generic)
 import Servant
@@ -31,10 +35,23 @@ data User = User
   , password :: String
   } deriving (Generic, ToJSON, FromJSON)
 
+data TokenHeader = TokenHeader
+  { typ :: String
+  , sig :: String
+  } deriving (Generic, ToJSON, FromJSON)
+
 
 generateToken :: User -> Handler (Envelope '[ResponseErr] Token)
-generateToken user = pureSuccEnvelope $ Token "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InJlbmFucm9iZXJ0b0B6b2hvLmNvbSIsInBhc3N3b3JkIjoicmVuYW4xMjMifQ.dN1XpaCTMFjleUr62e4_n05bevn3xXABbfB-cITInck"
+generateToken user =
+  let
+    header = (unpack . Base64.encode . encode) (TokenHeader "jwt" "HS256")
+    payload = (unpack . Base64.encode . encode) user
+  in
+    pureSuccEnvelope $ Token (intersperse '.' [header, payload])
 
+{--
+generateToken user = pureSuccEnvelope $ Token "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InJlbmFucm9iZXJ0b0B6b2hvLmNvbSIsInBhc3N3b3JkIjoicmVuYW4xMjMifQ.dN1XpaCTMFjleUr62e4_n05bevn3xXABbfB-cITInck"
+--}
 
 authHandlers :: Server AuthAPI
 authHandlers = generateToken
