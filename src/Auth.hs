@@ -47,11 +47,8 @@ generateToken user =
     header = (unpack . Base64.encode . encode) (TokenHeader "jwt" "HS256")
     payload = (unpack . Base64.encode . encode) user
   in
-    pureSuccEnvelope $ Token (intersperse '.' [header, payload])
+    pureSuccEnvelope $ Token (intercalate "." [header, payload])
 
-{--
-generateToken user = pureSuccEnvelope $ Token "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InJlbmFucm9iZXJ0b0B6b2hvLmNvbSIsInBhc3N3b3JkIjoicmVuYW4xMjMifQ.dN1XpaCTMFjleUr62e4_n05bevn3xXABbfB-cITInck"
---}
 
 authHandlers :: Server AuthAPI
 authHandlers = generateToken
