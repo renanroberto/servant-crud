@@ -6,6 +6,7 @@ module Auth (AuthAPI, authHandlers) where
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64.URL as Base64
 import Data.ByteString (ByteString)
+import Data.List (intercalate)
 import Crypto.Hash
 import Crypto.MAC.HMAC
 import Data.Aeson
@@ -55,8 +56,8 @@ data TokenHeader = TokenHeader
 generateToken :: User -> Handler (Envelope '[ResponseErr] Token)
 generateToken user = undefined
   -- let
-  --   header = (unpack . Base64.encode . encode) (TokenHeader "jwt" "HS256")
-  --   payload = (unpack . Base64.encode . encode) user
+  --   header = (show . Base64.encode . encode) (TokenHeader "jwt" "HS256")
+  --   payload = (show . Base64.encode . encode) user
   -- in
   --   pureSuccEnvelope $ Token (intercalate "." [header, payload])
 
