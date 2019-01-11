@@ -3,15 +3,26 @@
 
 module Auth (AuthAPI, authHandlers) where
 
-import Data.List
-import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy.Char8 (pack, unpack)
-import qualified Data.ByteString.Base64.Lazy as Base64
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base64.URL as Base64
+import Data.ByteString (ByteString)
+import Crypto.Hash
+import Crypto.MAC.HMAC
 import Data.Aeson
 import GHC.Generics (Generic)
 import Servant
 import Servant.Checked.Exceptions
 import Network.HTTP.Types.Status
+
+key :: ByteString
+key = "senha super secreta"
+
+pass :: HMAC SHA256
+pass = hmac key ("renan123" :: ByteString)
+
+crypto :: ByteString -> Bool
+crypto str =
+  let hs = hmac key str in hs == pass
 
 
 type AuthAPI =
@@ -42,12 +53,12 @@ data TokenHeader = TokenHeader
 
 
 generateToken :: User -> Handler (Envelope '[ResponseErr] Token)
-generateToken user =
-  let
-    header = (unpack . Base64.encode . encode) (TokenHeader "jwt" "HS256")
-    payload = (unpack . Base64.encode . encode) user
-  in
-    pureSuccEnvelope $ Token (intercalate "." [header, payload])
+generateToken user = undefined
+  -- let
+  --   header = (unpack . Base64.encode . encode) (TokenHeader "jwt" "HS256")
+  --   payload = (unpack . Base64.encode . encode) user
+  -- in
+  --   pureSuccEnvelope $ Token (intercalate "." [header, payload])
 
 
 authHandlers :: Server AuthAPI

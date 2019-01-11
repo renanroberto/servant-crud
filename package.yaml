@@ -23,6 +23,7 @@ dependencies:
 - base >= 4.7 && < 5
 - bytestring
 - base64-bytestring
+- cryptonite
 - time
 - aeson
 - servant-server
