@@ -1,20 +1,27 @@
-{-# LANGUAGE OverloadedStrings, DataKinds,
+{-# LANGUAGE OverloadedStrings, DataKinds, FlexibleInstances,
    TypeOperators, DeriveGeneric, DeriveAnyClass #-}
 
 module Auth (AuthAPI, authHandlers) where
 
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Base64.URL as Base64
 import Data.ByteString (ByteString)
-import Data.List (intercalate)
+import Data.ByteString.Char8 (pack, unpack)
+import Data.ByteString.Lazy (toStrict, fromStrict)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base64.URL.Lazy as Base64
+
 import Crypto.Hash
 import Crypto.MAC.HMAC
+
+import Data.List (intercalate)
 import Data.Aeson
 import GHC.Generics (Generic)
+
 import Servant
 import Servant.Checked.Exceptions
 import Network.HTTP.Types.Status
 
+
+{--}
 key :: ByteString
 key = "senha super secreta"
 
@@ -24,10 +31,11 @@ pass = hmac key ("renan123" :: ByteString)
 crypto :: ByteString -> Bool
 crypto str =
   let hs = hmac key str in hs == pass
+--}
 
 
 type AuthAPI =
-  "auth" :> ReqBody '[JSON] User :> Throws ResponseErr :> Post '[JSON] Token
+  "auth" :> ReqBody '[JSON] User :> Throws ResponseErr :> Post '[JSON] String
 
 
 data ResponseErr = InvalidCredentials
@@ -38,9 +46,6 @@ instance ErrStatus ResponseErr where
 instance ToJSON ResponseErr where
   toJSON InvalidCredentials = toJSON ("Email or password are wrong" :: String)
 
-
-data Token = Token { token :: String }
-  deriving (Generic, ToJSON, FromJSON)
 
 data User = User
   { email :: String
@@ -53,13 +58,41 @@ data TokenHeader = TokenHeader
   } deriving (Generic, ToJSON, FromJSON)
 
 
-generateToken :: User -> Handler (Envelope '[ResponseErr] Token)
-generateToken user = undefined
-  -- let
-  --   header = (show . Base64.encode . encode) (TokenHeader "jwt" "HS256")
-  --   payload = (show . Base64.encode . encode) user
-  -- in
-  --   pureSuccEnvelope $ Token (intercalate "." [header, payload])
+instance Show (HMAC a) where
+  show = show . hmacGetDigest
+
+
+class Joinable a where
+  (<.>) :: a -> a -> a
+
+instance Joinable ByteString where
+  x <.> y = BS.intercalate "." [x, y]
+
+instance Joinable [Char] where
+  x <.> y = intercalate "." [x, y]
+
+
+encodeToBS :: ToJSON a => a -> ByteString
+encodeToBS = (toStrict . Base64.encode . encode)
+
+tokenHeader :: ByteString
+tokenHeader =  encodeToBS (TokenHeader "jwt" "hs256")
+
+tokenPayload :: User -> ByteString
+tokenPayload user = encodeToBS user
+
+tokenSecret :: ByteString -> HMAC SHA256
+tokenSecret msg =
+  hmac key msg
+    where key :: ByteString
+          key = "meu grande segredo"
+
+
+generateToken :: User -> Handler (Envelope '[ResponseErr] String)
+generateToken user = 
+    pureSuccEnvelope $ unpack tokenData <.> show (tokenSecret tokenData)
+      where tokenData :: ByteString
+            tokenData = tokenHeader <.> tokenPayload user
 
 
 authHandlers :: Server AuthAPI
